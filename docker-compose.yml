@@ -1,0 +1,19 @@
+version: "3.4"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    privileged: true
+    volumes:
+      - ./src:/usr/src/app/src
+      - ./target:/usr/src/app/target
+      - ./Cargo.lock:/usr/src/app/Cargo.lock
+      - ./Cargo.toml:/usr/src/app/Cargo.toml
+    ports:
+      - 8000:8000
+    env_file: .env
+    environment:
+      ROCKET_ADDRESS: ${ROCKET_ADDRESS}
+      ROCKET_SECRET_KEY: ${ROCKET_SECRET_KEY}

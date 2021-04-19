@@ -1,0 +1,62 @@
+FROM buildpack-deps:buster as compilers
+
+RUN set -xe && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends git libcap-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone https://github.com/judge0/isolate.git /tmp/isolate && \
+    cd /tmp/isolate && \
+    git checkout ad39cc4d0fbb577fb545910095c9da5ef8fc9a1a && \
+    make -j$(nproc) install && \
+    rm -rf /tmp/*
+
+ENV PYTHON_VERSIONS \
+    3.8.1 \
+    2.7.17
+RUN set -xe && \
+    for VERSION in $PYTHON_VERSIONS; do \
+    curl -fSsL "https://www.python.org/ftp/python/$VERSION/Python-$VERSION.tar.xz" -o /tmp/python-$VERSION.tar.xz && \
+    mkdir /tmp/python-$VERSION && \
+    tar -xf /tmp/python-$VERSION.tar.xz -C /tmp/python-$VERSION --strip-components=1 && \
+    rm /tmp/python-$VERSION.tar.xz && \
+    cd /tmp/python-$VERSION && \
+    ./configure --prefix=/usr/local/python-$VERSION && \
+    make -j$(nproc) && \
+    make -j$(nproc) install && \
+    rm -rf /tmp/*; \
+    done
+
+ENV NODE_VERSIONS \
+    14.16.1
+RUN set -xe && \
+    for VERSION in $NODE_VERSIONS; do \
+    curl -fSsL "https://nodejs.org/dist/v$VERSION/node-v$VERSION.tar.gz" -o /tmp/node-$VERSION.tar.gz && \
+    mkdir /tmp/node-$VERSION && \
+    tar -xf /tmp/node-$VERSION.tar.gz -C /tmp/node-$VERSION --strip-components=1 && \
+    rm /tmp/node-$VERSION.tar.gz && \
+    cd /tmp/node-$VERSION && \
+    ./configure \
+    --prefix=/usr/local/node-$VERSION && \
+    make -j$(nproc) && \
+    make -j$(nproc) install && \
+    rm -rf /tmp/*; \
+    done
+
+FROM compilers
+
+RUN set -xe && \
+    apt-get update && \
+    rm -rf /var/lib/apt/lists/* && \
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain=nightly && \
+    . $HOME/.cargo/env
+
+RUN ~/.cargo/bin/cargo install cargo-watch
+
+WORKDIR /usr/src/app
+
+COPY src src
+
+COPY Cargo.lock .
+COPY Cargo.toml .
+
+CMD ~/.cargo/bin/cargo watch -x run
