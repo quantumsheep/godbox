@@ -20,7 +20,6 @@ WORKDIR /usr/src/app
 
 COPY src src
 
-COPY Cargo.lock .
 COPY Cargo.toml .
 
 RUN cargo install --path .

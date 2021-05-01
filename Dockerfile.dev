@@ -28,7 +28,6 @@ WORKDIR /usr/src/app
 
 COPY src src
 
-COPY Cargo.lock .
 COPY Cargo.toml .
 
 ENV ROCKET_ADDRESS=0.0.0.0
