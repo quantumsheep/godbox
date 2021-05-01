@@ -10,37 +10,9 @@ RUN set -xe && \
     make -j$(nproc) install && \
     rm -rf /tmp/*
 
-ENV PYTHON_VERSIONS \
-    3.8.1 \
-    2.7.17
-RUN set -xe && \
-    for VERSION in $PYTHON_VERSIONS; do \
-    curl -fSsL "https://www.python.org/ftp/python/$VERSION/Python-$VERSION.tar.xz" -o /tmp/python-$VERSION.tar.xz && \
-    mkdir /tmp/python-$VERSION && \
-    tar -xf /tmp/python-$VERSION.tar.xz -C /tmp/python-$VERSION --strip-components=1 && \
-    rm /tmp/python-$VERSION.tar.xz && \
-    cd /tmp/python-$VERSION && \
-    ./configure --prefix=/usr/local/python-$VERSION && \
-    make -j$(nproc) && \
-    make -j$(nproc) install && \
-    rm -rf /tmp/*; \
-    done
+COPY modules modules
 
-ENV NODE_VERSIONS \
-    14.16.1
-RUN set -xe && \
-    for VERSION in $NODE_VERSIONS; do \
-    curl -fSsL "https://nodejs.org/dist/v$VERSION/node-v$VERSION.tar.gz" -o /tmp/node-$VERSION.tar.gz && \
-    mkdir /tmp/node-$VERSION && \
-    tar -xf /tmp/node-$VERSION.tar.gz -C /tmp/node-$VERSION --strip-components=1 && \
-    rm /tmp/node-$VERSION.tar.gz && \
-    cd /tmp/node-$VERSION && \
-    ./configure \
-    --prefix=/usr/local/node-$VERSION && \
-    make -j$(nproc) && \
-    make -j$(nproc) install && \
-    rm -rf /tmp/*; \
-    done
+RUN for module in modules/*; do bash $module; done
 
 FROM compilers
 
@@ -58,5 +30,8 @@ COPY src src
 
 COPY Cargo.lock .
 COPY Cargo.toml .
+
+ENV ROCKET_ADDRESS=0.0.0.0
+ENV ROCKET_PORT=8080
 
 CMD ~/.cargo/bin/cargo watch -x run
