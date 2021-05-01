@@ -7,7 +7,7 @@ Secure sandboxing system for untrusted code execution.
 version: "3"
 
 services:
-  api:
+  godbox:
     image: quantumsheep/godbox
     privileged: true
     ports:
