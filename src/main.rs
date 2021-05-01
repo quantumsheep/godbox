@@ -9,29 +9,78 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 
+#[macro_use]
+extern crate derive_builder;
+
 extern crate base64;
 
 mod api_helpers;
 mod isolate;
 
 use crate::api_helpers::{ApiError, ApiResult};
-use crate::isolate::Isolate;
+use crate::isolate::{
+    ExecutedCommandResult, Isolate, IsolatedBox, IsolatedBoxOptions, IsolatedBoxOptionsBuilder,
+};
 use rocket_contrib::json::Json;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Deserialize, Debug)]
 struct RunBodyDTO {
-    language: String,
+    compile_script: Option<String>,
+    run_script: String,
+
+    shared_environment: Option<HashMap<String, String>>,
+    compile_environment: Option<HashMap<String, String>>,
+    run_environment: Option<HashMap<String, String>>,
+
     files: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Default, Builder)]
+#[builder(setter(into, strip_option), default)]
 struct RunResponseDTO {
-    output: String,
+    compile_status: Option<i64>,
+    compile_stdout: Option<String>,
+    compile_stderr: Option<String>,
+
+    run_status: Option<i64>,
+    run_stdout: Option<String>,
+    run_stderr: Option<String>,
+}
+
+fn exec_command<I, S>(
+    isolated_box: &IsolatedBox,
+    command: I,
+    options: IsolatedBoxOptions,
+    error_if_not_success: bool,
+) -> Result<ExecutedCommandResult, String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    match isolated_box.exec(command, options) {
+        Ok(result) => {
+            if error_if_not_success && !result.status.success() {
+                return Err(result.stdout);
+            }
+
+            Ok(result)
+        }
+        Err(e) => {
+            return Err(e.to_string());
+        }
+    }
+}
+
+fn cleanup_isolated_box(isolate: &mut Isolate, isolated_box: &IsolatedBox) {
+    if let Err(e) = isolate.destroy_box(&isolated_box) {
+        println!("Failed to cleanup the box {}: {}", isolated_box.box_id, e);
+    }
 }
 
 #[post("/run", data = "<body>")]
-fn run(body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
+fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
     let files_buffer = match base64::decode(&body.files) {
         Ok(buf) => buf,
         Err(e) => return ApiError::bad_request(format!("Error while reading files: {}", e)).into(),
@@ -50,22 +99,151 @@ fn run(body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
         }
     };
 
-    if let Err(e) = isolated_box.upload_file("/box/files.zip", &files_buffer) {
+    if let Some(compile_script) = &body.compile_script {
+        if let Err(e) = isolated_box.upload_file("/box/compile.sh", &compile_script.as_bytes()) {
+            cleanup_isolated_box(&mut isolate, &isolated_box);
+
+            return ApiError::internal_server_error(format!(
+                "Failed to upload files into the isolated environment: {}",
+                e,
+            ))
+            .into();
+        }
+    }
+
+    if let Err(e) = isolated_box.upload_file("/box/run.sh", &body.run_script.as_bytes()) {
+        cleanup_isolated_box(&mut isolate, &isolated_box);
+
         return ApiError::internal_server_error(format!(
-            "Failed to upload the files into the isolated environment: {}",
+            "Failed to upload files into the isolated environment: {}",
             e,
         ))
         .into();
     }
 
-    let output = match isolated_box.exec(vec!["/usr/bin/unzip", "-n", "-qq", "/box/files.zip"]) {
-        Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
+    if let Err(e) = isolated_box.upload_file("/box/files.zip", &files_buffer) {
+        cleanup_isolated_box(&mut isolate, &isolated_box);
+
+        return ApiError::internal_server_error(format!(
+            "Failed to upload files into the isolated environment: {}",
+            e,
+        ))
+        .into();
+    }
+
+    if let Err(e) = exec_command(
+        &isolated_box,
+        vec!["/usr/bin/unzip", "-n", "-qq", "/box/files.zip"],
+        IsolatedBoxOptionsBuilder::default().build().unwrap(),
+        true,
+    ) {
+        cleanup_isolated_box(&mut isolate, &isolated_box);
+
+        return ApiError::bad_request(format!("Error while unzipping files: {}", e)).into();
+    }
+
+    if let Err(e) = exec_command(
+        &isolated_box,
+        vec!["/bin/rm", "/box/files.zip"],
+        IsolatedBoxOptionsBuilder::default().build().unwrap(),
+        true,
+    ) {
+        cleanup_isolated_box(&mut isolate, &isolated_box);
+
+        return ApiError::internal_server_error(format!("An error occured: {}", e)).into();
+    }
+
+    let mut compile_result_option: Option<ExecutedCommandResult> = None;
+
+    if body.compile_script.is_some() {
+        if let Some(shared_environment) = body.shared_environment.clone() {
+            if let Some(compile_environment) = &mut body.compile_environment {
+                compile_environment.extend(shared_environment.into_iter());
+            } else {
+                body.compile_environment = Some(shared_environment);
+            }
+        }
+
+        compile_result_option = match exec_command(
+            &isolated_box,
+            vec!["/bin/bash", "/box/compile.sh"],
+            IsolatedBoxOptionsBuilder::default()
+                .environment(body.compile_environment.clone())
+                .build()
+                .unwrap(),
+            false,
+        ) {
+            Ok(result) => {
+                if !result.status.success() {
+                    return Ok(Json(
+                        RunResponseDTOBuilder::default()
+                            .compile_status(result.status.code().unwrap())
+                            .compile_stdout(result.stdout)
+                            .compile_stderr(result.stderr)
+                            .build()
+                            .unwrap(),
+                    ));
+                }
+
+                Some(result)
+            }
+            Err(e) => {
+                cleanup_isolated_box(&mut isolate, &isolated_box);
+
+                return ApiError::internal_server_error(format!("An error occured: {}", e)).into();
+            }
+        };
+    }
+
+    if let Some(shared_environment) = body.shared_environment.clone() {
+        if let Some(run_environment) = &mut body.run_environment {
+            run_environment.extend(shared_environment.into_iter());
+        } else {
+            body.run_environment = Some(shared_environment);
+        }
+    }
+
+    let run_result = match exec_command(
+        &isolated_box,
+        vec!["/bin/bash", "/box/run.sh"],
+        IsolatedBoxOptionsBuilder::default()
+            .environment(body.run_environment.clone())
+            .build()
+            .unwrap(),
+        false,
+    ) {
+        Ok(result) => result,
         Err(e) => {
-            return ApiError::internal_server_error(format!("An error occured: {}", e)).into()
+            cleanup_isolated_box(&mut isolate, &isolated_box);
+
+            return ApiError::internal_server_error(format!("An error occured: {}", e)).into();
         }
     };
 
-    return Ok(Json(RunResponseDTO { output }));
+    cleanup_isolated_box(&mut isolate, &isolated_box);
+
+    if let Some(compile_result) = compile_result_option {
+        Ok(Json(
+            RunResponseDTOBuilder::default()
+                .compile_status(compile_result.status.code().unwrap())
+                .compile_stdout(compile_result.stdout)
+                .compile_stderr(compile_result.stderr)
+                .run_status(run_result.status.code().unwrap())
+                .run_stdout(run_result.stdout)
+                .run_stderr(run_result.stderr)
+                .build()
+                .unwrap(),
+        ))
+    } else {
+        Ok(Json(
+            RunResponseDTOBuilder::default()
+                .run_status(run_result.status.code().unwrap())
+                .run_stdout(run_result.stdout)
+                .run_stderr(run_result.stderr)
+                .build()
+                .unwrap(),
+        ))
+    }
 }
 
 fn main() {

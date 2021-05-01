@@ -1,20 +1,103 @@
 use rand::{thread_rng, Rng};
-use std::ffi::OsStr;
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Command;
+use std::process::ExitStatus;
 
 #[derive(Debug)]
+pub struct ExecutedCommandResult {
+    pub status: ExitStatus,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+fn exec_command<I, S>(args: I) -> io::Result<ExecutedCommandResult>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut args_string: Vec<String> = args.into_iter().map(Into::into).collect();
+
+    let program = args_string.remove(0);
+
+    println!(
+        "Executing command: {} {}",
+        program,
+        args_string.join(" ").to_string()
+    );
+
+    let output = Command::new(program).args(args_string).output()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    Ok(ExecutedCommandResult {
+        status: output.status,
+        stdout,
+        stderr,
+    })
+}
+
+#[derive(Debug, Clone)]
 pub struct IsolatedBox {
     pub box_id: u32,
     pub workdir: String,
+
+    stdout_file: String,
+}
+
+#[derive(Default, Debug, Builder)]
+#[builder(setter(into))]
+pub struct IsolatedBoxOptions {
+    #[builder(default)]
+    pub environment: Option<HashMap<String, String>>,
+
+    #[builder(default = "5")]
+    pub run_time_limit: u64,
+
+    #[builder(default = "0")]
+    pub extra_time_limit: u64,
+
+    #[builder(default = "10")]
+    pub wall_time_limit: u64,
+
+    #[builder(default = "128000")]
+    pub stack_size_limit: u64,
+
+    #[builder(default = "120")]
+    pub process_count_limit: u64,
+
+    #[builder(default = "512000")]
+    pub memory_limit: u64,
+
+    #[builder(default = "10240")]
+    pub storage_limit: u64,
 }
 
 impl IsolatedBox {
-    pub fn new(box_id: u32, workdir: String) -> IsolatedBox {
-        IsolatedBox { box_id, workdir }
+    pub fn new(box_id: u32) -> io::Result<IsolatedBox> {
+        let output = exec_command(vec!["isolate", "--cg", &format!("-b {}", box_id), "--init"])?;
+
+        let workdir = output.stdout.trim().to_string();
+        let stdout_file = format!("{}/stdout", workdir);
+
+        exec_command(vec![
+            "touch",
+            &stdout_file,
+            "&&",
+            "chown",
+            "$(whoami):",
+            &stdout_file,
+        ])?;
+
+        Ok(IsolatedBox {
+            box_id,
+            workdir,
+            stdout_file: stdout_file.clone(),
+        })
     }
 
     pub fn upload_file<S: Into<String>>(
@@ -31,12 +114,10 @@ impl IsolatedBox {
 
         if let Some(parent) = path.parent() {
             let directory = format!("{}{}{}", self.workdir, separator, parent.to_string_lossy());
-            println!("directory: {}", directory);
             fs::create_dir_all(directory)?;
         }
 
         let file_absolute_path = format!("{}{}{}", self.workdir, separator, path.to_string_lossy());
-        println!("file_absolute_path: {}", file_absolute_path);
 
         let mut file = File::create(&file_absolute_path)?;
         file.write_all(buf)?;
@@ -44,77 +125,107 @@ impl IsolatedBox {
         Ok(Path::new(&file_absolute_path).to_owned())
     }
 
-    pub fn exec<I, S>(&self, command: I) -> io::Result<Output>
+    pub fn exec<I, S>(
+        &self,
+        command: I,
+        options: IsolatedBoxOptions,
+    ) -> io::Result<ExecutedCommandResult>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
+        S: Into<String>,
     {
-        let mut cmd = Command::new("isolate");
+        let box_id_arg = format!("-b {}", self.box_id);
+        let run_time_limit_arg = format!("-t {}", options.run_time_limit);
+        let extra_time_limit_arg = format!("-x {}", options.extra_time_limit);
+        let wall_time_limit_arg = format!("-w {}", options.wall_time_limit);
+        let stack_size_limit_arg = format!("-k {}", options.stack_size_limit);
+        let process_count_limit_arg = format!("-p{}", options.process_count_limit);
+        let memory_limit_arg = format!("--cg-mem={}", options.memory_limit);
+        let storage_limit_arg = format!("-f {}", options.storage_limit);
 
-        // Enable control groups
-        cmd.arg("--cg")
+        let isolate_args = vec![
+            "isolate",
+            "--cg",
             // Box ID
-            .arg(format!("-b {}", self.box_id))
+            &box_id_arg,
             // stderr -> stdout
-            .arg("--stderr-to-stdout")
+            "--stderr-to-stdout",
             // Run time limit
-            .arg("-t 2")
+            &run_time_limit_arg,
             // Extra time limit
-            .arg("-x 1")
+            &extra_time_limit_arg,
             // Wall Time limit
-            .arg("-w 4")
+            &wall_time_limit_arg,
             // Stack size limit
-            .arg("-k 128000")
+            &stack_size_limit_arg,
             // Process count limit
-            .arg("-p60")
+            &process_count_limit_arg,
             // Enable per process/thread time limit
-            .arg("--no-cg-timing")
+            "--cg-timing",
             // Memory limit in KB
-            .arg("-m 512000")
+            &memory_limit_arg,
             // Storage size limit in KB
-            .arg("-f 10240")
+            &storage_limit_arg,
+        ];
+
+        let mut environment_variables: Vec<String> = vec![];
+
+        if let Some(environment) = options.environment {
+            for (key, value) in environment.iter() {
+                environment_variables.push(format!("-E{}={}", key, value));
+            }
+        }
+
+        let mut args: Vec<String> = vec![];
+        args.append(&mut isolate_args.iter().map(|&v| v.into()).collect());
+
+        args.append(&mut environment_variables);
+
+        args.append(&mut vec![
             // Run a command
-            .arg("--run")
-            .arg("--")
-            .args(command);
+            "--run".into(),
+            "--".into(),
+        ]);
+        args.append(&mut command.into_iter().map(Into::into).collect());
 
-        println!("Executed in isolation: {:?}", cmd);
+        exec_command(args)
+    }
 
-        return cmd.output();
+    pub fn cleanup(&self) -> io::Result<ExecutedCommandResult> {
+        let box_id_arg = format!("-b {}", self.box_id);
+
+        let isolate_args = vec!["isolate", "--cg", &box_id_arg, "--cleanup"];
+
+        exec_command(isolate_args)
     }
 }
 
 #[derive(Debug)]
 pub struct Isolate {
-    pub boxes: Vec<IsolatedBox>,
+    pub boxes: HashMap<u32, IsolatedBox>,
 }
 
 impl Isolate {
     pub fn new() -> Isolate {
-        Isolate { boxes: vec![] }
+        Isolate {
+            boxes: HashMap::new(),
+        }
     }
 
     pub fn init_box(&mut self) -> Result<IsolatedBox, io::Error> {
-        let box_id = thread_rng().gen::<u32>();
+        let box_id = thread_rng().gen_range(0..=(i32::MAX as u32));
+        let isolated_box = IsolatedBox::new(box_id)?;
 
-        let output = Command::new("isolate")
-            .arg("--cg")
-            .arg(format!("-b {}", box_id))
-            .arg("--init")
-            .output()?;
+        self.boxes.insert(box_id, isolated_box.clone());
 
-        println!(
-            "init() stdout: {}",
-            String::from_utf8_lossy(&output.stdout.clone())
-        );
-        println!(
-            "init() stdout: {}",
-            String::from_utf8_lossy(&output.stderr.clone())
-        );
+        Ok(isolated_box)
+    }
 
-        Ok(IsolatedBox::new(
-            box_id,
-            String::from_utf8_lossy(&output.stdout.clone()).trim().to_string(),
-        ))
+    pub fn destroy_box(&mut self, isolated_box: &IsolatedBox) -> Result<(), io::Error> {
+        isolated_box.cleanup()?;
+
+        self.boxes.remove(&isolated_box.box_id);
+
+        Ok(())
     }
 }

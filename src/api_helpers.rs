@@ -44,7 +44,7 @@ impl ApiError {
     }
 
     pub fn bad_request<S: Into<String>>(message: S) -> ApiError {
-        ApiError::new(Status::NotFound, message)
+        ApiError::new(Status::BadRequest, message)
     }
 
     pub fn internal_server_error<S: Into<String>>(message: S) -> ApiError {

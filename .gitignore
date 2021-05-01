@@ -12,3 +12,6 @@ Cargo.lock
 
 # Environment file
 .env
+
+# macOS specific
+.DS_Store
