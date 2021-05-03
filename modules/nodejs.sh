@@ -13,5 +13,5 @@ for VERSION in $NODE_VERSIONS; do
     ./configure --prefix=/usr/local/node-$VERSION
     make -j$(nproc)
     make -j$(nproc) install
-    rm -rf /tmp/*
+    rm -rf /tmp/*;
 done
