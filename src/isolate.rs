@@ -175,7 +175,11 @@ impl IsolatedBox {
 
         if let Some(environment) = options.environment {
             for (key, value) in environment.iter() {
-                environment_variables.push(format!("-E{}={}", key, value));
+                environment_variables.push(format!(
+                    "-E{}=\"{}\"",
+                    key.replace("\\", "\\\\").replace("\"", "\\\""),
+                    value.replace("\\", "\\\\").replace("\"", "\\\"")
+                ));
             }
         }
 
