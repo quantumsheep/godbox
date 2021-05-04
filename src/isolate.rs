@@ -84,14 +84,8 @@ impl IsolatedBox {
         let workdir = output.stdout.trim().to_string();
         let stdout_file = format!("{}/stdout", workdir);
 
-        exec_command(vec![
-            "touch",
-            &stdout_file,
-            "&&",
-            "chown",
-            "$(whoami):",
-            &stdout_file,
-        ])?;
+        exec_command(vec!["touch", &stdout_file])?;
+        exec_command(vec!["chown", "$(whoami):", &stdout_file])?;
 
         Ok(IsolatedBox {
             box_id,
