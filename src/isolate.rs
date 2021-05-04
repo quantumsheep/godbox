@@ -168,7 +168,10 @@ impl IsolatedBox {
             &storage_limit_arg,
         ];
 
-        let mut environment_variables: Vec<String> = vec![];
+        let mut environment_variables = vec![
+            "-EHOME=/tmp".to_string(),
+            "-EPATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"".to_string(),
+        ];
 
         if let Some(environment) = options.environment {
             for (key, value) in environment.iter() {
