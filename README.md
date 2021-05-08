@@ -39,7 +39,7 @@ docker run -it -d --privileged -p 8080:8080 quantumsheep/godbox
 The folowing demonstration uses the folowing file architecture:
 ```
 .
-├── src
+└── src
     └── app.c
 ```
 
