@@ -248,8 +248,7 @@ impl IsolatedBox {
     pub fn cleanup(&self) -> io::Result<ExecutedCommandResult> {
         let box_id_arg = format!("-b {}", self.box_id);
 
-        // let isolate_args = vec!["isolate", "--cg", &box_id_arg, "--cleanup"];
-        let isolate_args = vec!["/bin/ls"];
+        let isolate_args = vec!["isolate", "--cg", &box_id_arg, "--cleanup"];
 
         exec_command(isolate_args, None, None)
     }
