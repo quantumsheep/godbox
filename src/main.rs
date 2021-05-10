@@ -34,6 +34,8 @@ struct RunBodyDTO {
     compile_environment: Option<HashMap<String, String>>,
     run_environment: Option<HashMap<String, String>>,
 
+    profiling: Option<bool>,
+
     files: String,
 }
 
@@ -47,16 +49,17 @@ struct RunResponseDTO {
     run_status: Option<i64>,
     run_stdout: Option<String>,
     run_stderr: Option<String>,
+
+    profiling_result: Option<String>,
 }
 
-fn exec_command<I, S>(
+fn exec_command<S>(
     isolated_box: &IsolatedBox,
-    command: I,
+    command: S,
     options: IsolatedBoxOptions,
     error_if_not_success: bool,
 ) -> Result<ExecutedCommandResult, String>
 where
-    I: IntoIterator<Item = S>,
     S: Into<String>,
 {
     match isolated_box.exec(command, options) {
@@ -99,28 +102,6 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
         }
     };
 
-    if let Some(compile_script) = &body.compile_script {
-        if let Err(e) = isolated_box.upload_file("/box/compile.sh", &compile_script.as_bytes()) {
-            cleanup_isolated_box(&mut isolate, &isolated_box);
-
-            return ApiError::internal_server_error(format!(
-                "Failed to upload files into the isolated environment: {}",
-                e,
-            ))
-            .into();
-        }
-    }
-
-    if let Err(e) = isolated_box.upload_file("/box/run.sh", &body.run_script.as_bytes()) {
-        cleanup_isolated_box(&mut isolate, &isolated_box);
-
-        return ApiError::internal_server_error(format!(
-            "Failed to upload files into the isolated environment: {}",
-            e,
-        ))
-        .into();
-    }
-
     if let Err(e) = isolated_box.upload_file("/box/files.zip", &files_buffer) {
         cleanup_isolated_box(&mut isolate, &isolated_box);
 
@@ -133,7 +114,7 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
 
     if let Err(e) = exec_command(
         &isolated_box,
-        vec!["/usr/bin/unzip", "-n", "-qq", "/box/files.zip"],
+        "/usr/bin/unzip -n -qq /box/files.zip && /bin/rm /box/files.zip",
         IsolatedBoxOptionsBuilder::default().build().unwrap(),
         true,
     ) {
@@ -142,20 +123,9 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
         return ApiError::bad_request(format!("Error while unzipping files: {}", e)).into();
     }
 
-    if let Err(e) = exec_command(
-        &isolated_box,
-        vec!["/bin/rm", "/box/files.zip"],
-        IsolatedBoxOptionsBuilder::default().build().unwrap(),
-        true,
-    ) {
-        cleanup_isolated_box(&mut isolate, &isolated_box);
-
-        return ApiError::internal_server_error(format!("An error occured: {}", e)).into();
-    }
-
     let mut compile_result_option: Option<ExecutedCommandResult> = None;
 
-    if body.compile_script.is_some() {
+    if let Some(compile_script) = body.compile_script.clone() {
         if let Some(shared_environment) = body.shared_environment.clone() {
             if let Some(compile_environment) = &mut body.compile_environment {
                 compile_environment.extend(shared_environment.into_iter());
@@ -166,7 +136,7 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
 
         compile_result_option = match exec_command(
             &isolated_box,
-            vec!["/bin/bash", "/box/compile.sh"],
+            compile_script,
             IsolatedBoxOptionsBuilder::default()
                 .environment(body.compile_environment.clone())
                 .build()
@@ -205,9 +175,10 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
 
     let run_result = match exec_command(
         &isolated_box,
-        vec!["/bin/bash", "/box/run.sh"],
+        body.run_script.clone(),
         IsolatedBoxOptionsBuilder::default()
             .environment(body.run_environment.clone())
+            .profiling(body.profiling.unwrap_or(false))
             .build()
             .unwrap(),
         false,
@@ -220,30 +191,45 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
         }
     };
 
+    let mut profiling_result_option = None;
+
+    if body.profiling.unwrap_or(false) {
+        match exec_command(
+            &isolated_box,
+            "/usr/bin/perf_5.10 script -i perf.data > out.txt && /bin/cat out.txt",
+            IsolatedBoxOptionsBuilder::default().build().unwrap(),
+            false,
+        ) {
+            Ok(result) => profiling_result_option = Some(result.stdout),
+            Err(e) => {
+                cleanup_isolated_box(&mut isolate, &isolated_box);
+
+                return ApiError::internal_server_error(format!("An error occured: {}", e)).into();
+            }
+        };
+    }
+
     cleanup_isolated_box(&mut isolate, &isolated_box);
 
+    let mut result = RunResponseDTOBuilder::default();
+
+    result
+        .run_status(run_result.status.code().unwrap())
+        .run_stdout(run_result.stdout)
+        .run_stderr(run_result.stderr);
+
     if let Some(compile_result) = compile_result_option {
-        Ok(Json(
-            RunResponseDTOBuilder::default()
-                .compile_status(compile_result.status.code().unwrap())
-                .compile_stdout(compile_result.stdout)
-                .compile_stderr(compile_result.stderr)
-                .run_status(run_result.status.code().unwrap())
-                .run_stdout(run_result.stdout)
-                .run_stderr(run_result.stderr)
-                .build()
-                .unwrap(),
-        ))
-    } else {
-        Ok(Json(
-            RunResponseDTOBuilder::default()
-                .run_status(run_result.status.code().unwrap())
-                .run_stdout(run_result.stdout)
-                .run_stderr(run_result.stderr)
-                .build()
-                .unwrap(),
-        ))
+        result
+            .compile_status(compile_result.status.code().unwrap())
+            .compile_stdout(compile_result.stdout)
+            .compile_stderr(compile_result.stderr);
     }
+
+    if let Some(profiling_result) = profiling_result_option {
+        result.profiling_result(profiling_result);
+    }
+
+    Ok(Json(result.build().unwrap()))
 }
 
 fn main() {

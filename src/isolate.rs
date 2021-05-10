@@ -1,11 +1,11 @@
 use rand::{thread_rng, Rng};
-use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitStatus;
+use std::{collections::HashMap, process::Stdio};
 
 #[derive(Debug)]
 pub struct ExecutedCommandResult {
@@ -14,7 +14,11 @@ pub struct ExecutedCommandResult {
     pub stderr: String,
 }
 
-fn exec_command<I, S>(args: I) -> io::Result<ExecutedCommandResult>
+fn exec_command<I, S>(
+    args: I,
+    stdout: Option<Stdio>,
+    stderr: Option<Stdio>,
+) -> io::Result<ExecutedCommandResult>
 where
     I: IntoIterator<Item = S>,
     S: Into<String>,
@@ -29,7 +33,12 @@ where
         args_string.join(" ").to_string()
     );
 
-    let output = Command::new(program).args(args_string).output()?;
+    let output = Command::new(program)
+        .args(args_string)
+        .stdout(stdout.unwrap_or(Stdio::piped()))
+        .stderr(stderr.unwrap_or(Stdio::piped()))
+        .spawn()?
+        .wait_with_output()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -47,13 +56,17 @@ pub struct IsolatedBox {
     pub workdir: String,
 
     stdout_file: String,
+    stderr_file: String,
 }
 
-#[derive(Default, Debug, Builder)]
+#[derive(Default, Debug, Builder, Clone)]
 #[builder(setter(into))]
 pub struct IsolatedBoxOptions {
     #[builder(default)]
     pub environment: Option<HashMap<String, String>>,
+
+    #[builder(default = "false")]
+    pub profiling: bool,
 
     #[builder(default = "5")]
     pub run_time_limit: u64,
@@ -79,18 +92,27 @@ pub struct IsolatedBoxOptions {
 
 impl IsolatedBox {
     pub fn new(box_id: u32) -> io::Result<IsolatedBox> {
-        let output = exec_command(vec!["isolate", "--cg", &format!("-b {}", box_id), "--init"])?;
+        let output = exec_command(
+            vec!["isolate", "--cg", &format!("-b {}", box_id), "--init"],
+            None,
+            None,
+        )?;
 
         let workdir = output.stdout.trim().to_string();
-        let stdout_file = format!("{}/stdout", workdir);
 
-        exec_command(vec!["touch", &stdout_file])?;
-        exec_command(vec!["chown", "$(whoami):", &stdout_file])?;
+        let stdout_file = format!("{}/stdout", workdir);
+        exec_command(vec!["touch", &stdout_file], None, None)?;
+        exec_command(vec!["chown", "$(whoami):", &stdout_file], None, None)?;
+
+        let stderr_file = format!("{}/stderr", workdir);
+        exec_command(vec!["touch", &stderr_file], None, None)?;
+        exec_command(vec!["chown", "$(whoami):", &stderr_file], None, None)?;
 
         Ok(IsolatedBox {
             box_id,
             workdir,
             stdout_file: stdout_file.clone(),
+            stderr_file: stderr_file.clone(),
         })
     }
 
@@ -119,13 +141,12 @@ impl IsolatedBox {
         Ok(Path::new(&file_absolute_path).to_owned())
     }
 
-    pub fn exec<I, S>(
+    pub fn exec<S>(
         &self,
-        command: I,
+        command: S,
         options: IsolatedBoxOptions,
     ) -> io::Result<ExecutedCommandResult>
     where
-        I: IntoIterator<Item = S>,
         S: Into<String>,
     {
         let box_id_arg = format!("-b {}", self.box_id);
@@ -163,11 +184,11 @@ impl IsolatedBox {
         ];
 
         let mut environment_variables = vec![
-            "-EHOME=/tmp".to_string(),
-            "-EPATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"".to_string(),
+            "-EHOME=/tmp".into(),
+            "-EPATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"".into(),
         ];
 
-        if let Some(environment) = options.environment {
+        if let Some(environment) = options.environment.clone() {
             for (key, value) in environment.iter() {
                 environment_variables.push(format!(
                     "-E{}=\"{}\"",
@@ -187,17 +208,50 @@ impl IsolatedBox {
             "--run".into(),
             "--".into(),
         ]);
-        args.append(&mut command.into_iter().map(Into::into).collect());
 
-        exec_command(args)
+        let script_name = format!("/box/.script-{}.sh", thread_rng().gen::<u64>());
+
+        self.upload_file(
+            script_name.clone(),
+            format!("{}\n", command.into()).as_bytes(),
+        )?;
+
+        if options.profiling {
+            args.append(&mut vec![
+                "/usr/bin/perf_5.10".into(),
+                "record".into(),
+                "-g".into(),
+            ]);
+        }
+
+        args.append(&mut vec!["/bin/bash".into(), script_name.clone()]);
+
+        let stdout_stream = File::create(self.stdout_file.clone())?;
+        let stderr_stream = File::create(self.stderr_file.clone())?;
+
+        let result = exec_command(
+            args,
+            Some(Stdio::from(stdout_stream)),
+            Some(Stdio::from(stderr_stream)),
+        )?;
+
+        let stdout = fs::read_to_string(self.stdout_file.clone())?;
+        let stderr = fs::read_to_string(self.stderr_file.clone())?;
+
+        Ok(ExecutedCommandResult {
+            status: result.status,
+            stdout,
+            stderr,
+        })
     }
 
     pub fn cleanup(&self) -> io::Result<ExecutedCommandResult> {
         let box_id_arg = format!("-b {}", self.box_id);
 
-        let isolate_args = vec!["isolate", "--cg", &box_id_arg, "--cleanup"];
+        // let isolate_args = vec!["isolate", "--cg", &box_id_arg, "--cleanup"];
+        let isolate_args = vec!["/bin/ls"];
 
-        exec_command(isolate_args)
+        exec_command(isolate_args, None, None)
     }
 }
 
