@@ -65,7 +65,7 @@ where
     match isolated_box.exec(command, options) {
         Ok(result) => {
             if error_if_not_success && !result.status.success() {
-                return Err(result.stdout);
+                return Err(result.stderr);
             }
 
             Ok(result)
