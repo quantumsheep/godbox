@@ -26,6 +26,50 @@ use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Deserialize, Debug)]
+struct RunSettings {
+    pub run_time_limit: Option<u64>,
+    pub extra_time_limit: Option<u64>,
+    pub wall_time_limit: Option<u64>,
+    pub stack_size_limit: Option<u64>,
+    pub process_count_limit: Option<u64>,
+    pub memory_limit: Option<u64>,
+    pub storage_limit: Option<u64>,
+}
+
+fn merge_settings_to_isolated_box_options(
+    options: &mut IsolatedBoxOptionsBuilder,
+    settings: &RunSettings,
+) {
+    if let Some(run_time_limit) = settings.run_time_limit {
+        options.run_time_limit(run_time_limit);
+    }
+
+    if let Some(extra_time_limit) = settings.extra_time_limit {
+        options.extra_time_limit(extra_time_limit);
+    }
+
+    if let Some(wall_time_limit) = settings.wall_time_limit {
+        options.wall_time_limit(wall_time_limit);
+    }
+
+    if let Some(stack_size_limit) = settings.stack_size_limit {
+        options.stack_size_limit(stack_size_limit);
+    }
+
+    if let Some(process_count_limit) = settings.process_count_limit {
+        options.process_count_limit(process_count_limit);
+    }
+
+    if let Some(memory_limit) = settings.memory_limit {
+        options.memory_limit(memory_limit);
+    }
+
+    if let Some(storage_limit) = settings.storage_limit {
+        options.storage_limit(storage_limit);
+    }
+}
+
+#[derive(Deserialize, Debug)]
 struct RunBodyDTO {
     compile_script: Option<String>,
     run_script: String,
@@ -33,6 +77,10 @@ struct RunBodyDTO {
     shared_environment: Option<HashMap<String, String>>,
     compile_environment: Option<HashMap<String, String>>,
     run_environment: Option<HashMap<String, String>>,
+
+    shared_isolation_settings: Option<RunSettings>,
+    compile_isolation_settings: Option<RunSettings>,
+    run_isolation_settings: Option<RunSettings>,
 
     profiling: Option<bool>,
 
@@ -124,6 +172,9 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
     }
 
     let mut compile_result_option: Option<ExecutedCommandResult> = None;
+    let allow_isolation_settings = std::env::var("ALLOW_CONFIGURE_ISOLATION_SETTINGS")
+        .unwrap_or("false".to_string())
+        .eq_ignore_ascii_case("true");
 
     if let Some(compile_script) = body.compile_script.clone() {
         if let Some(shared_environment) = body.shared_environment.clone() {
@@ -134,13 +185,24 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
             }
         }
 
+        let mut compile_isolation_options = IsolatedBoxOptionsBuilder::default()
+            .environment(body.compile_environment.clone())
+            .clone();
+
+        if allow_isolation_settings {
+            if let Some(settings) = &body.shared_isolation_settings {
+                merge_settings_to_isolated_box_options(&mut compile_isolation_options, &settings)
+            }
+
+            if let Some(settings) = &body.compile_isolation_settings {
+                merge_settings_to_isolated_box_options(&mut compile_isolation_options, &settings)
+            }
+        }
+
         compile_result_option = match exec_command(
             &isolated_box,
             compile_script,
-            IsolatedBoxOptionsBuilder::default()
-                .environment(body.compile_environment.clone())
-                .build()
-                .unwrap(),
+            compile_isolation_options.build().unwrap(),
             false,
         ) {
             Ok(result) => {
@@ -173,14 +235,25 @@ fn run(mut body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
         }
     }
 
+    let mut run_isolation_options = IsolatedBoxOptionsBuilder::default()
+        .environment(body.run_environment.clone())
+        .profiling(body.profiling.unwrap_or(false))
+        .clone();
+
+    if allow_isolation_settings {
+        if let Some(settings) = &body.shared_isolation_settings {
+            merge_settings_to_isolated_box_options(&mut run_isolation_options, &settings)
+        }
+
+        if let Some(settings) = &body.run_isolation_settings {
+            merge_settings_to_isolated_box_options(&mut run_isolation_options, &settings)
+        }
+    }
+
     let run_result = match exec_command(
         &isolated_box,
         body.run_script.clone(),
-        IsolatedBoxOptionsBuilder::default()
-            .environment(body.run_environment.clone())
-            .profiling(body.profiling.unwrap_or(false))
-            .build()
-            .unwrap(),
+        run_isolation_options.build().unwrap(),
         false,
     ) {
         Ok(result) => result,
