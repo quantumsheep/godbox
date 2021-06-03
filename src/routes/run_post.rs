@@ -1,5 +1,5 @@
 use crate::api_helpers::{ApiError, ApiResult};
-use crate::runner::phase_settings::{PhaseRunSettings, PhaseSettings};
+use crate::runner::phase_settings::{PhaseSandboxSettings, PhaseSettings};
 use crate::runner::runner::RunnerPhaseResult;
 use crate::runner::runner::Runner;
 use merge::Merge;
@@ -12,7 +12,7 @@ pub struct RunBodyDTO {
     phases: Vec<PhaseSettings>,
 
     environment: Option<HashMap<String, String>>,
-    isolation_settings: Option<PhaseRunSettings>,
+    sandbox_settings: Option<PhaseSandboxSettings>,
 
     files: String,
 }
@@ -56,11 +56,11 @@ pub fn route(body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
             }
         }
 
-        if let Some(isolation_settings) = body.isolation_settings.clone() {
-            if let Some(phase_isolation_settings) = &mut phase_settings.isolation_settings {
-                phase_isolation_settings.merge(isolation_settings);
+        if let Some(sandbox_settings) = body.sandbox_settings.clone() {
+            if let Some(phase_sandbox_settings) = &mut phase_settings.sandbox_settings {
+                phase_sandbox_settings.merge(sandbox_settings);
             } else {
-                phase_settings.isolation_settings = Some(isolation_settings);
+                phase_settings.sandbox_settings = Some(sandbox_settings);
             }
         }
 
