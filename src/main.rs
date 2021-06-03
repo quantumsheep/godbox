@@ -14,5 +14,6 @@ mod runner;
 fn main() {
     rocket::ignite()
         .mount("/", routes![routes::run_post::route])
+        .register(api_helpers::generate_catchers())
         .launch();
 }
