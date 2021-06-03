@@ -80,7 +80,7 @@ Encoded using command `zip -q -r - * | base64` (could have been a library, it do
       "sandbox_settings": {
         "run_time_limit": 20,
         "wall_time_limit": 40
-      },
+      }
     },
     {
       "name": "Execution",
