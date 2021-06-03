@@ -22,7 +22,12 @@ jobs:
 
       - name: Tag name
         id: tag_name
-        run: echo ::set-output name=TAG_NAME::${GITHUB_REF/refs\/tags\//}
+        run: |
+          TAG_NAME=${GITHUB_REF/refs\/tags\//}
+          echo ::set-output name=TAG_NAME::$TAG_NAME
+          echo ::set-output name=TAG_NAME_MAJOR::$(echo $TAG_NAME | cut -d. -f1)
+          echo ::set-output name=TAG_NAME_MINOR::$(echo $TAG_NAME | cut -d. -f2)
+          echo ::set-output name=TAG_NAME_PATCH::$(echo $TAG_NAME | cut -d. -f3)
 
       - name: Build and push
         id: docker_build
@@ -32,5 +37,7 @@ jobs:
           tags: |
             quantumsheep/godbox:latest
             quantumsheep/godbox:${{ steps.tag_name.outputs.TAG_NAME }}
+            quantumsheep/godbox:${{ steps.tag_name.outputs.TAG_NAME_MAJOR }}
+            quantumsheep/godbox:${{ steps.tag_name.outputs.TAG_NAME_MAJOR }}.${{ steps.tag_name.outputs.TAG_NAME_MINOR }}
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
