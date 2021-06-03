@@ -120,7 +120,7 @@ impl IsolatedBox {
         &self,
         path_string: S,
         buf: &[u8],
-    ) -> Result<PathBuf, io::Error> {
+    ) -> io::Result<PathBuf> {
         let path = Path::new(&path_string.into()).to_owned();
 
         let separator = match path.is_absolute() {
@@ -143,7 +143,7 @@ impl IsolatedBox {
 
     pub fn exec<S>(
         &self,
-        command: S,
+        script: S,
         options: IsolatedBoxOptions,
     ) -> io::Result<ExecutedCommandResult>
     where
@@ -185,13 +185,13 @@ impl IsolatedBox {
 
         let mut environment_variables = vec![
             "-EHOME=/tmp".into(),
-            "-EPATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"".into(),
+            "-EPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
         ];
 
         if let Some(environment) = options.environment.clone() {
             for (key, value) in environment.iter() {
                 environment_variables.push(format!(
-                    "-E{}=\"{}\"",
+                    "-E{}={}",
                     key.replace("\\", "\\\\").replace("\"", "\\\""),
                     value.replace("\\", "\\\\").replace("\"", "\\\"")
                 ));
@@ -213,7 +213,7 @@ impl IsolatedBox {
 
         self.upload_file(
             script_name.clone(),
-            format!("{}\n", command.into()).as_bytes(),
+            format!("{}\n", script.into()).as_bytes(),
         )?;
 
         if options.profiling {
@@ -244,14 +244,6 @@ impl IsolatedBox {
             stderr,
         })
     }
-
-    pub fn cleanup(&self) -> io::Result<ExecutedCommandResult> {
-        let box_id_arg = format!("-b {}", self.box_id);
-
-        let isolate_args = vec!["isolate", "--cg", &box_id_arg, "--cleanup"];
-
-        exec_command(isolate_args, None, None)
-    }
 }
 
 #[derive(Debug)]
@@ -266,7 +258,7 @@ impl Isolate {
         }
     }
 
-    pub fn init_box(&mut self) -> Result<IsolatedBox, io::Error> {
+    pub fn init_box(&mut self) -> io::Result<IsolatedBox> {
         let box_id = thread_rng().gen_range(0..=(i32::MAX as u32));
         let isolated_box = IsolatedBox::new(box_id)?;
 
@@ -275,10 +267,18 @@ impl Isolate {
         Ok(isolated_box)
     }
 
-    pub fn destroy_box(&mut self, isolated_box: &IsolatedBox) -> Result<(), io::Error> {
-        isolated_box.cleanup()?;
+    fn cleanup(&self, isolated_box_id: u32) -> io::Result<ExecutedCommandResult> {
+        let box_id_arg = format!("-b {}", isolated_box_id);
 
-        self.boxes.remove(&isolated_box.box_id);
+        let isolate_args = vec!["isolate", "--cg", &box_id_arg, "--cleanup"];
+
+        exec_command(isolate_args, None, None)
+    }
+
+    pub fn destroy_box(&mut self, isolated_box_id: u32) -> io::Result<()> {
+        self.cleanup(isolated_box_id)?;
+
+        self.boxes.remove(&isolated_box_id);
 
         Ok(())
     }
