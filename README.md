@@ -66,7 +66,7 @@ The folowing demonstration uses the folowing file architecture:
 ```
 .
 └── src
-    └── app.c
+    └── main.c
 ```
 
 Encoded using command `zip -q -r - * | base64` (could have been a library, it doesn't matter while it keeps beeing `files -> zip -> base64`).
