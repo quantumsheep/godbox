@@ -10,7 +10,7 @@ version: "3"
 
 services:
   godbox:
-    image: quantumsheep/godbox
+    image: quantumsheep/godbox:1
     privileged: true
     ports:
       - 8080:8080
@@ -18,7 +18,7 @@ services:
 
 ### Docker
 ```sh
-docker run -it -d --privileged -p 8080:8080 quantumsheep/godbox
+docker run -it -d --privileged -p 8080:8080 quantumsheep/godbox:1
 ```
 
 # Usage
