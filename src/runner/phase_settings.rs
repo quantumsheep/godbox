@@ -2,8 +2,9 @@ use crate::isolate::{IsolatedBoxOptions, IsolatedBoxOptionsBuilder};
 use merge::Merge;
 use serde::Deserialize;
 use std::collections::HashMap;
+use validator::Validate;
 
-#[derive(Deserialize, Debug, Clone, Default, Merge)]
+#[derive(Deserialize, Debug, Clone, Default, Merge, Validate)]
 pub struct PhaseSandboxSettings {
     pub run_time_limit: Option<u64>,
     pub extra_time_limit: Option<u64>,
@@ -14,7 +15,7 @@ pub struct PhaseSandboxSettings {
     pub storage_limit: Option<u64>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Validate)]
 pub struct PhaseSettings {
     pub name: Option<String>,
 

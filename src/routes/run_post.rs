@@ -1,13 +1,14 @@
 use crate::api_helpers::{ApiError, ApiResult};
 use crate::runner::phase_settings::{PhaseSandboxSettings, PhaseSettings};
-use crate::runner::runner::RunnerPhaseResult;
 use crate::runner::runner::Runner;
+use crate::runner::runner::RunnerPhaseResult;
+use actix_web::{post, web::Json};
 use merge::Merge;
-use rocket_contrib::json::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use validator::Validate;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Validate)]
 pub struct RunBodyDTO {
     phases: Vec<PhaseSettings>,
 
@@ -23,8 +24,8 @@ pub struct RunResponseDTO {
     phases: Vec<RunnerPhaseResult>,
 }
 
-#[post("/run", data = "<body>")]
-pub fn route(body: Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
+#[post("/run")]
+pub async fn route(body: actix_web_validator::Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
     let mut runner = match Runner::new() {
         Ok(v) => v,
         Err(e) => {
