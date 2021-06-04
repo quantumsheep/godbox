@@ -14,3 +14,11 @@ services:
     ports:
       - 8080:8080
     tty: true
+    environment:
+      MAX_RUN_TIME_LIMIT: -1
+      MAX_EXTRA_TIME_LIMIT: -1
+      MAX_WALL_TIME_LIMIT: -1
+      MAX_STACK_SIZE_LIMIT: -1
+      MAX_PROCESS_COUNT_LIMIT: -1
+      MAX_MEMORY_LIMIT: -1
+      MAX_STORAGE_LIMIT: -1
