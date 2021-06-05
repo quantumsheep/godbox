@@ -1,4 +1,4 @@
-FROM rustlang/rust:stable as build
+FROM rust:1.52 as build
 
 WORKDIR /usr/src/app
 
