@@ -82,11 +82,19 @@ fn check_body(body: &actix_web_validator::Json<RunBodyDTO>) -> Result<(), ApiErr
         }
     }
 
+    let allow_profiling = match env::var("ALLOW_PROFILING") {
+        Ok(value) => {
+            let lowercase_value = value.to_lowercase();
+            ["true", "yes"].iter().any(|&s| s == lowercase_value)
+        },
+        Err(_) => true,
+    };
+
     for i in 0..body.phases.len() {
         let phase_settings = body.phases[i].clone();
 
         if let Some(profiling) = phase_settings.profiling {
-            if profiling {
+            if profiling && !allow_profiling {
                 return ApiError::bad_request("Profiling is not allowed").into();
             }
         }
