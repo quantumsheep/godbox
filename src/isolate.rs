@@ -1,12 +1,11 @@
 use rand::{thread_rng, Rng};
-use std::cmp::min;
 use std::fs::{self, File};
+use std::io;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitStatus;
 use std::{collections::HashMap, process::Stdio};
-use std::{env, io};
 
 #[derive(Debug)]
 pub struct ExecutedCommandResult {
@@ -146,57 +145,14 @@ impl IsolatedBox {
     where
         S: Into<String>,
     {
-        fn cap_limit_env(current: u64, name: &str) -> u64 {
-            let max = match env::var(name) {
-                Ok(value) => match value.as_str() {
-                    "-1" => u64::MAX,
-                    _ => match value.parse() {
-                        Ok(max) => max,
-                        Err(e) => {
-                            eprintln!(
-                                "Failed to parse environment variable '{}' as an `u64`: {}",
-                                name, e
-                            );
-
-                            u64::MAX
-                        }
-                    },
-                },
-                Err(_) => u64::MAX,
-            };
-
-            min(current, max)
-        }
-
         let box_id_arg = format!("-b {}", self.box_id);
-        let run_time_limit_arg = format!(
-            "-t {}",
-            cap_limit_env(options.run_time_limit, "MAX_RUN_TIME_LIMIT")
-        );
-        let extra_time_limit_arg = format!(
-            "-x {}",
-            cap_limit_env(options.extra_time_limit, "MAX_EXTRA_TIME_LIMIT")
-        );
-        let wall_time_limit_arg = format!(
-            "-w {}",
-            cap_limit_env(options.wall_time_limit, "MAX_WALL_TIME_LIMIT")
-        );
-        let stack_size_limit_arg = format!(
-            "-k {}",
-            cap_limit_env(options.stack_size_limit, "MAX_STACK_SIZE_LIMIT")
-        );
-        let process_count_limit_arg = format!(
-            "-p{}",
-            cap_limit_env(options.process_count_limit, "MAX_PROCESS_COUNT_LIMIT")
-        );
-        let memory_limit_arg = format!(
-            "--cg-mem={}",
-            cap_limit_env(options.memory_limit, "MAX_MEMORY_LIMIT")
-        );
-        let storage_limit_arg = format!(
-            "-f {}",
-            cap_limit_env(options.storage_limit, "MAX_STORAGE_LIMIT")
-        );
+        let run_time_limit_arg = format!("-t {}", options.run_time_limit);
+        let extra_time_limit_arg = format!("-x {}", options.extra_time_limit);
+        let wall_time_limit_arg = format!("-w {}", options.wall_time_limit);
+        let stack_size_limit_arg = format!("-k {}", options.stack_size_limit);
+        let process_count_limit_arg = format!("-p{}", options.process_count_limit);
+        let memory_limit_arg = format!("--cg-mem={}", options.memory_limit);
+        let storage_limit_arg = format!("-f {}", options.storage_limit);
 
         let isolate_args = vec![
             "isolate",

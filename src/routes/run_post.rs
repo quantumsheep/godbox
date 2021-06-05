@@ -6,6 +6,7 @@ use actix_web::{post, web::Json};
 use merge::Merge;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env;
 use validator::Validate;
 
 #[derive(Deserialize, Debug, Validate)]
@@ -24,8 +25,95 @@ pub struct RunResponseDTO {
     phases: Vec<RunnerPhaseResult>,
 }
 
+fn is_over_cap_limit_env(current_option: Option<u64>, name: &str) -> bool {
+    match current_option {
+        Some(current) => {
+            let max = match env::var(name) {
+                Ok(value) => match value.as_str() {
+                    "-1" => u64::MAX,
+                    _ => match value.parse() {
+                        Ok(max) => max,
+                        Err(e) => {
+                            eprintln!(
+                                "Failed to parse environment variable '{}' as an `u64`: {}",
+                                name, e
+                            );
+
+                            u64::MAX
+                        }
+                    },
+                },
+                Err(_) => u64::MAX,
+            };
+
+            current > max
+        }
+        None => false,
+    }
+}
+
+fn check_body(body: &actix_web_validator::Json<RunBodyDTO>) -> Result<(), ApiError> {
+    fn setting_max_value_error(origin: &str, env_name: &str) -> ApiError {
+        ApiError::bad_request(format!(
+            "{}: maximum allowed value is {}",
+            origin,
+            env::var(env_name).unwrap_or(u64::MAX.to_string())
+        ))
+    }
+
+    macro_rules! check_cap_limit {
+        ($origin_str:expr, $origin_expr:expr, $env_name:expr) => {
+            if is_over_cap_limit_env($origin_expr, $env_name) {
+                return setting_max_value_error($origin_str, $env_name).into();
+            }
+        };
+    }
+
+    if let Some(sandbox_settings) = &body.sandbox_settings {
+        #[cfg_attr(rustfmt, rustfmt_skip)]
+        {
+            check_cap_limit!("sandbox_settings.run_time_limit", sandbox_settings.run_time_limit, "MAX_RUN_TIME_LIMIT");
+            check_cap_limit!("sandbox_settings.extra_time_limit", sandbox_settings.extra_time_limit, "MAX_EXTRA_TIME_LIMIT");
+            check_cap_limit!("sandbox_settings.wall_time_limit", sandbox_settings.wall_time_limit, "MAX_WALL_TIME_LIMIT");
+            check_cap_limit!("sandbox_settings.stack_size_limit", sandbox_settings.stack_size_limit, "MAX_STACK_SIZE_LIMIT");
+            check_cap_limit!("sandbox_settings.process_count_limit", sandbox_settings.process_count_limit, "MAX_PROCESS_COUNT_LIMIT");
+            check_cap_limit!("sandbox_settings.memory_limit", sandbox_settings.memory_limit, "MAX_MEMORY_LIMIT");
+            check_cap_limit!("sandbox_settings.storage_limit", sandbox_settings.storage_limit, "MAX_STORAGE_LIMIT");
+        }
+    }
+
+    for i in 0..body.phases.len() {
+        let phase_settings = body.phases[i].clone();
+
+        if let Some(profiling) = phase_settings.profiling {
+            if profiling {
+                return ApiError::bad_request("Profiling is not allowed").into();
+            }
+        }
+
+        if let Some(sandbox_settings) = phase_settings.sandbox_settings {
+            #[cfg_attr(rustfmt, rustfmt_skip)]
+            {
+                check_cap_limit!(&format!("phases[{}].sandbox_settings.run_time_limit", i), sandbox_settings.run_time_limit, "MAX_RUN_TIME_LIMIT");
+                check_cap_limit!(&format!("phases[{}].sandbox_settings.extra_time_limit", i), sandbox_settings.extra_time_limit, "MAX_EXTRA_TIME_LIMIT");
+                check_cap_limit!(&format!("phases[{}].sandbox_settings.wall_time_limit", i), sandbox_settings.wall_time_limit, "MAX_WALL_TIME_LIMIT");
+                check_cap_limit!(&format!("phases[{}].sandbox_settings.stack_size_limit", i), sandbox_settings.stack_size_limit, "MAX_STACK_SIZE_LIMIT");
+                check_cap_limit!(&format!("phases[{}].sandbox_settings.process_count_limit", i), sandbox_settings.process_count_limit, "MAX_PROCESS_COUNT_LIMIT");
+                check_cap_limit!(&format!("phases[{}].sandbox_settings.memory_limit", i), sandbox_settings.memory_limit, "MAX_MEMORY_LIMIT");
+                check_cap_limit!(&format!("phases[{}].sandbox_settings.storage_limit", i), sandbox_settings.storage_limit, "MAX_STORAGE_LIMIT");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[post("/run")]
 pub async fn route(body: actix_web_validator::Json<RunBodyDTO>) -> ApiResult<RunResponseDTO> {
+    if let Err(e) = check_body(&body) {
+        return e.into();
+    }
+
     let mut runner = match Runner::new() {
         Ok(v) => v,
         Err(e) => {
