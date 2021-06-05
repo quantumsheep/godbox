@@ -22,6 +22,18 @@ docker run -it -d --privileged -p 8080:8080 quantumsheep/godbox:2
 ```
 
 # Usage
+## Environment variables
+| Name                    | Type      | Default | Description                 |
+|-------------------------|-----------|---------|-----------------------------|
+| ALLOW_PROFILING         | `boolean` | true    | Enable or disable profiling |
+| MAX_RUN_TIME_LIMIT      | `number`  | -1      | Maximum run time limit      |
+| MAX_EXTRA_TIME_LIMIT    | `number`  | -1      | Maximum extra time limit    |
+| MAX_WALL_TIME_LIMIT     | `number`  | -1      | Maximum wall time limit     |
+| MAX_STACK_SIZE_LIMIT    | `number`  | -1      | Maximum stack size limit    |
+| MAX_PROCESS_COUNT_LIMIT | `number`  | -1      | Maximum process count limit |
+| MAX_MEMORY_LIMIT        | `number`  | -1      | Maximum memory limit        |
+| MAX_STORAGE_LIMIT       | `number`  | -1      | Maximum storage limit       |
+
 ## POST /run
 ### Properties
 | Name             | Type                     | Description                                                     |
