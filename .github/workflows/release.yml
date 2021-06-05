@@ -35,9 +35,9 @@ jobs:
         with:
           push: true
           tags: |
-            quantumsheep/godbox:latest
             quantumsheep/godbox:${{ steps.tag_name.outputs.TAG_NAME }}
             quantumsheep/godbox:${{ steps.tag_name.outputs.TAG_NAME_MAJOR }}.${{ steps.tag_name.outputs.TAG_NAME_MINOR }}
             quantumsheep/godbox:${{ steps.tag_name.outputs.TAG_NAME_MAJOR }}
+            quantumsheep/godbox:latest
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
