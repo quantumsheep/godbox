@@ -45,13 +45,14 @@ Send a `POST` HTTP request to `http://localhost:8080/run` containing the wanted 
 | sandbox_settings | `SandboxSettings`        | Override default sandbox limitation settings                    |
 
 ### Phase
-| Name             | Type                     | Default       | Description                                                                                                                         |
-|------------------|--------------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| name             | `string`                 | Phase's index | Name that will be used in result output                                                                                             |
-| script*          | `string`                 |               | Multi-line bash script that will be executed inside the isolated environment                                                        |
-| environment      | `Record<string, string>` |               | Environment variables available inside `script` execution. This will override global environment variables with the same given keys |
-| sandbox_settings | `SandboxSettings`        |               | Overrides default sandbox limitation settings. This will override global sandbox settings with the same given keys                  |
-| profiling        | `boolean`                | false         | Run a profiler on `script`. This functionnality is WIP                                                                              |
+| Name             | Type              | Default       | Description                                                                                                                         |
+|------------------|-------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| script*          | `string`          |               | Multi-line bash script that will be executed inside the isolated environment                                                        |
+| name             | `string`          | Phase's index | Name that will be used in result output                                                                                             |
+| stdin            | `string`          |               | Content used in `stdin`                                                                                                             |
+| environment      | `Record`          |               | Environment variables available inside `script` execution. This will override global environment variables with the same given keys |
+| sandbox_settings | `SandboxSettings` |               | Overrides default sandbox limitation settings. This will override global sandbox settings with the same given keys                  |
+| profiling        | `boolean`         | false         | Run a profiler on `script`. This functionnality is WIP                                                                              |
 
 ### SandboxSettings
 | Name                | Type     | Default | Description                                                                                                                                                                                                                                                                                                                                                                                    |
