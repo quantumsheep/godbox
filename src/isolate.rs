@@ -1,7 +1,9 @@
 use rand::{thread_rng, Rng};
+use serde::Serialize;
 use std::fs::{self, File};
 use std::io;
 use std::io::prelude::*;
+use std::os::unix::prelude::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitStatus;
@@ -50,6 +52,58 @@ where
     })
 }
 
+#[derive(Default, Debug, Builder, Clone, Serialize)]
+#[builder(default)]
+pub struct IsolateMetadata {
+    pub time: Option<f64>,
+    pub time_wall: Option<f64>,
+    pub max_rss: Option<u64>,
+    pub csw_voluntary: Option<u64>,
+    pub csw_forced: Option<u64>,
+    pub cg_mem: Option<u64>,
+    pub exit_code: Option<i32>,
+    pub status: Option<String>,
+}
+
+impl From<String> for IsolateMetadata {
+    fn from(string: String) -> Self {
+        let mut builder = IsolateMetadataBuilder::default();
+
+        for metadata in string.lines() {
+            let values = metadata.split(':').collect::<Vec<_>>();
+
+            if values.len() < 2 {
+                continue;
+            }
+
+            let key = values[0];
+            let value = values[1];
+
+            match key {
+                "time" => builder.time(Some(value.parse().unwrap())),
+                "time-wall" => builder.time_wall(Some(value.parse().unwrap())),
+                "max-rss" => builder.max_rss(Some(value.parse().unwrap())),
+                "csw-voluntary" => builder.csw_voluntary(Some(value.parse().unwrap())),
+                "csw-forced" => builder.csw_forced(Some(value.parse().unwrap())),
+                "cg-mem" => builder.cg_mem(Some(value.parse().unwrap())),
+                "exitcode" => builder.exit_code(Some(value.parse().unwrap())),
+                "status" => builder.status(Some(value.to_string())),
+                _ => &mut builder,
+            };
+        }
+
+        builder.build().unwrap()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IsolatedExecutedCommandResult {
+    pub status: ExitStatus,
+    pub stdout: String,
+    pub stderr: String,
+    pub metadata: IsolateMetadata,
+}
+
 #[derive(Debug, Clone)]
 pub struct IsolatedBox {
     pub box_id: u32,
@@ -57,6 +111,7 @@ pub struct IsolatedBox {
 
     stdout_file: String,
     stderr_file: String,
+    metadata_file: String,
 }
 
 #[derive(Default, Debug, Builder, Clone)]
@@ -100,20 +155,30 @@ impl IsolatedBox {
 
         let workdir = output.stdout.trim().to_string();
 
-        let stdout_file = format!("{}/stdout", workdir);
-        exec_command(vec!["touch", &stdout_file], None, None)?;
-        exec_command(vec!["chown", "$(whoami):", &stdout_file], None, None)?;
-
-        let stderr_file = format!("{}/stderr", workdir);
-        exec_command(vec!["touch", &stderr_file], None, None)?;
-        exec_command(vec!["chown", "$(whoami):", &stderr_file], None, None)?;
+        let stdout_file = Self::create_file(workdir.clone(), "stdout")?;
+        let stderr_file = Self::create_file(workdir.clone(), "stderr")?;
+        let metadata_file = Self::create_file(workdir.clone(), "metadata")?;
 
         Ok(IsolatedBox {
             box_id,
             workdir,
-            stdout_file: stdout_file.clone(),
-            stderr_file: stderr_file.clone(),
+            stdout_file,
+            stderr_file,
+            metadata_file,
         })
+    }
+
+    fn create_file<S1, S2>(workdir: S1, filename: S2) -> io::Result<String>
+    where
+        S1: Into<String>,
+        S2: Into<String>,
+    {
+        let filepath = format!("{}/{}", workdir.into(), filename.into());
+
+        exec_command(vec!["touch", &filepath], None, None)?;
+        exec_command(vec!["chown", "$(whoami):", &filepath], None, None)?;
+
+        Ok(filepath)
     }
 
     pub fn upload_file<S: Into<String>>(&self, path_string: S, buf: &[u8]) -> io::Result<PathBuf> {
@@ -141,11 +206,12 @@ impl IsolatedBox {
         &self,
         script: S,
         options: IsolatedBoxOptions,
-    ) -> io::Result<ExecutedCommandResult>
+    ) -> io::Result<IsolatedExecutedCommandResult>
     where
         S: Into<String>,
     {
         let box_id_arg = format!("-b {}", self.box_id);
+        let metadata_arg = format!("-M{}", self.metadata_file);
         let run_time_limit_arg = format!("-t {}", options.run_time_limit);
         let extra_time_limit_arg = format!("-x {}", options.extra_time_limit);
         let wall_time_limit_arg = format!("-w {}", options.wall_time_limit);
@@ -159,8 +225,8 @@ impl IsolatedBox {
             "--cg",
             // Box ID
             &box_id_arg,
-            // stderr -> stdout
-            "--stderr-to-stdout",
+            // Metadata file
+            &metadata_arg,
             // Run time limit
             &run_time_limit_arg,
             // Extra time limit
@@ -233,11 +299,20 @@ impl IsolatedBox {
 
         let stdout = fs::read_to_string(self.stdout_file.clone())?;
         let stderr = fs::read_to_string(self.stderr_file.clone())?;
+        let metadata_string = fs::read_to_string(self.metadata_file.clone())?;
 
-        Ok(ExecutedCommandResult {
-            status: result.status,
+        let metadata = IsolateMetadata::from(metadata_string);
+
+        println!("{:?}", metadata);
+
+        Ok(IsolatedExecutedCommandResult {
+            status: match metadata.exit_code {
+                Some(exit_code) => ExitStatus::from_raw(exit_code),
+                None => result.status,
+            },
             stdout,
             stderr,
+            metadata,
         })
     }
 }

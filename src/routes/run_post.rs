@@ -166,7 +166,13 @@ pub async fn route(body: actix_web_validator::Json<RunBodyDTO>) -> ApiResult<Run
             Err(e) => return e.into(),
         };
 
+        let status = result.status;
+
         results.push(result);
+
+        if status != 0 {
+            break;
+        }
     }
 
     Ok(Json(RunResponseDTO { phases: results }))

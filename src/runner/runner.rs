@@ -1,6 +1,7 @@
 use crate::api_helpers::ApiError;
 use crate::isolate::{
-    ExecutedCommandResult, Isolate, IsolatedBox, IsolatedBoxOptions, IsolatedBoxOptionsBuilder,
+    Isolate, IsolateMetadata, IsolateMetadataBuilder, IsolatedBox, IsolatedBoxOptions,
+    IsolatedBoxOptionsBuilder, IsolatedExecutedCommandResult,
 };
 use serde::Serialize;
 use std::io;
@@ -15,6 +16,7 @@ pub struct RunnerPhaseResult {
     pub status: i32,
     pub stdout: String,
     pub stderr: String,
+    pub metadata: IsolateMetadata,
 }
 
 pub struct Runner {
@@ -51,39 +53,6 @@ impl Runner {
         Ok(())
     }
 
-    fn exec_isolated_box<S>(
-        &self,
-        isolated_box: &IsolatedBox,
-        script: S,
-        options: IsolatedBoxOptions,
-    ) -> ExecutedCommandResult
-    where
-        S: Into<String>,
-    {
-        match isolated_box.exec(script, options) {
-            Ok(result) => result,
-            Err(e) => ExecutedCommandResult {
-                status: ExitStatus::from_raw(1),
-                stderr: e.to_string(),
-                stdout: "".to_string(),
-            },
-        }
-    }
-
-    fn exec<S>(
-        &self,
-        isolated_box_id: u32,
-        script: S,
-        options: IsolatedBoxOptions,
-    ) -> Result<ExecutedCommandResult, ApiError>
-    where
-        S: Into<String>,
-    {
-        let isolated_box = self.get_isolated_box(isolated_box_id)?;
-
-        Ok(self.exec_isolated_box(&isolated_box, script, options))
-    }
-
     pub fn setup(&mut self, files: &String) -> Result<u32, ApiError> {
         let isolated_box = match self.isolate.init_box() {
             Ok(v) => v,
@@ -118,6 +87,8 @@ impl Runner {
         );
 
         if !unzip_result.status.success() {
+            self.cleanup_isolated_box(isolated_box.box_id)?;
+
             return ApiError::bad_request(format!(
                 "Error while unzipping files: {}",
                 unzip_result.stderr
@@ -126,6 +97,40 @@ impl Runner {
         }
 
         Ok(isolated_box.box_id)
+    }
+
+    fn exec_isolated_box<S>(
+        &self,
+        isolated_box: &IsolatedBox,
+        script: S,
+        options: IsolatedBoxOptions,
+    ) -> IsolatedExecutedCommandResult
+    where
+        S: Into<String>,
+    {
+        match isolated_box.exec(script, options) {
+            Ok(result) => result,
+            Err(e) => IsolatedExecutedCommandResult {
+                status: ExitStatus::from_raw(1),
+                stderr: e.to_string(),
+                stdout: "".to_string(),
+                metadata: IsolateMetadataBuilder::default().build().unwrap(),
+            },
+        }
+    }
+
+    fn exec<S>(
+        &self,
+        isolated_box_id: u32,
+        script: S,
+        options: IsolatedBoxOptions,
+    ) -> Result<IsolatedExecutedCommandResult, ApiError>
+    where
+        S: Into<String>,
+    {
+        let isolated_box = self.get_isolated_box(isolated_box_id)?;
+
+        Ok(self.exec_isolated_box(&isolated_box, script, options))
     }
 
     pub fn run_phase(
@@ -144,6 +149,7 @@ impl Runner {
             status: result.status.code().unwrap_or(1),
             stderr: result.stderr,
             stdout: result.stdout,
+            metadata: result.metadata,
         })
     }
 }
