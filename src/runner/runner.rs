@@ -1,7 +1,7 @@
 use crate::api_helpers::ApiError;
 use crate::isolate::{
-    Isolate, IsolateMetadata, IsolateMetadataBuilder, IsolatedBox, IsolatedBoxOptions,
-    IsolatedBoxOptionsBuilder, IsolatedExecutedCommandResult,
+    Isolate, IsolateMetadataBuilder, IsolatedBox, IsolatedBoxOptions, IsolatedBoxOptionsBuilder,
+    IsolatedExecutedCommandResult,
 };
 use serde::Serialize;
 use std::io;
@@ -16,7 +16,13 @@ pub struct RunnerPhaseResult {
     pub status: i32,
     pub stdout: String,
     pub stderr: String,
-    pub metadata: IsolateMetadata,
+
+    pub time: Option<f64>,
+    pub time_wall: Option<f64>,
+    pub used_memory: Option<u64>,
+    pub sandbox_status: Option<String>,
+    pub csw_voluntary: Option<u64>,
+    pub csw_forced: Option<u64>,
 }
 
 pub struct Runner {
@@ -149,7 +155,13 @@ impl Runner {
             status: result.status.code().unwrap_or(1),
             stderr: result.stderr,
             stdout: result.stdout,
-            metadata: result.metadata,
+
+            time: result.metadata.time,
+            time_wall: result.metadata.time_wall,
+            used_memory: result.metadata.cg_mem,
+            sandbox_status: result.metadata.status,
+            csw_voluntary: result.metadata.csw_voluntary,
+            csw_forced: result.metadata.csw_forced,
         })
     }
 }
