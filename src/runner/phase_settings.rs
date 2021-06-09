@@ -20,6 +20,8 @@ pub struct PhaseSettings {
     pub name: Option<String>,
 
     pub script: String,
+    pub stdin: Option<String>,
+
     pub environment: Option<HashMap<String, String>>,
 
     pub sandbox_settings: Option<PhaseSandboxSettings>,
@@ -61,6 +63,10 @@ impl From<PhaseSettings> for IsolatedBoxOptions {
         }
 
         options.environment(settings.environment.clone());
+
+        if let Some(stdin) = settings.stdin {
+            options.stdin(stdin);
+        }
 
         if let Some(profiling) = settings.profiling {
             options.profiling(profiling);

@@ -20,6 +20,7 @@ fn exec_command<I, S>(
     args: I,
     stdout: Option<Stdio>,
     stderr: Option<Stdio>,
+    stdin: Option<String>,
 ) -> io::Result<ExecutedCommandResult>
 where
     I: IntoIterator<Item = S>,
@@ -35,12 +36,22 @@ where
         args_string.join(" ").to_string()
     );
 
-    let output = Command::new(program)
+    let mut child = Command::new(program)
         .args(args_string)
         .stdout(stdout.unwrap_or(Stdio::piped()))
         .stderr(stderr.unwrap_or(Stdio::piped()))
-        .spawn()?
-        .wait_with_output()?;
+        .stdin(Stdio::piped())
+        .spawn()?;
+
+    if let Some(stdin_string) = stdin {
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin_string.as_bytes())?;
+    }
+
+    let output = child.wait_with_output()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -120,6 +131,9 @@ pub struct IsolatedBoxOptions {
     #[builder(default)]
     pub environment: Option<HashMap<String, String>>,
 
+    #[builder(default)]
+    pub stdin: Option<String>,
+
     #[builder(default = "false")]
     pub profiling: bool,
 
@@ -151,6 +165,7 @@ impl IsolatedBox {
             vec!["isolate", "--cg", &format!("-b {}", box_id), "--init"],
             None,
             None,
+            None,
         )?;
 
         let workdir = output.stdout.trim().to_string();
@@ -175,8 +190,8 @@ impl IsolatedBox {
     {
         let filepath = format!("{}/{}", workdir.into(), filename.into());
 
-        exec_command(vec!["touch", &filepath], None, None)?;
-        exec_command(vec!["chown", "$(whoami):", &filepath], None, None)?;
+        exec_command(vec!["touch", &filepath], None, None, None)?;
+        exec_command(vec!["chown", "$(whoami):", &filepath], None, None, None)?;
 
         Ok(filepath)
     }
@@ -297,6 +312,7 @@ impl IsolatedBox {
             args,
             Some(Stdio::from(stdout_stream)),
             Some(Stdio::from(stderr_stream)),
+            options.stdin,
         )?;
 
         let stdout = fs::read_to_string(self.stdout_file.clone())?;
@@ -345,7 +361,7 @@ impl Isolate {
 
         let isolate_args = vec!["isolate", "--cg", &box_id_arg, "--cleanup"];
 
-        exec_command(isolate_args, None, None)
+        exec_command(isolate_args, None, None, None)
     }
 
     pub fn destroy_box(&mut self, isolated_box_id: u32) -> io::Result<()> {
