@@ -223,6 +223,8 @@ impl IsolatedBox {
         let isolate_args = vec![
             "isolate",
             "--cg",
+            // Silent mode - Disable status messages printed to stderr, except for fatal errors of the sandbox itself
+            "-s",
             // Box ID
             &box_id_arg,
             // Metadata file
