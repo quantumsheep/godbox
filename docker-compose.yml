@@ -15,6 +15,7 @@ services:
       - 8080:8080
     tty: true
     environment:
+      API_MAX_PAYLOAD_SIZE: 32768
       ALLOW_PROFILING: "true"
       MAX_RUN_TIME_LIMIT: -1
       MAX_EXTRA_TIME_LIMIT: -1

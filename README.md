@@ -24,6 +24,7 @@ docker run -it -d --privileged -p 8080:8080 quantumsheep/godbox:2
 # Environment variables
 | Name                    | Type      | Default | Description                 |
 |-------------------------|-----------|---------|-----------------------------|
+| API_MAX_PAYLOAD_SIZE    | `number`  | 32768   | API maximum payload size    |
 | ALLOW_PROFILING         | `boolean` | true    | Enable or disable profiling |
 | MAX_RUN_TIME_LIMIT      | `number`  | -1      | Maximum run time limit      |
 | MAX_EXTRA_TIME_LIMIT    | `number`  | -1      | Maximum extra time limit    |

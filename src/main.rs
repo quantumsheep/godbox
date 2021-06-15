@@ -1,7 +1,7 @@
 use actix_web::{error::InternalError, App, HttpResponse, HttpServer};
 use actix_web_validator::{Error, JsonConfig};
 use serde::Serialize;
-use std::io;
+use std::{env, io};
 use validator::ValidationErrors;
 
 extern crate derive_more;
@@ -37,17 +37,30 @@ impl From<&ValidationErrors> for ValidationErrorDTO {
 async fn main() -> io::Result<()> {
     HttpServer::new(|| {
         App::new()
-            .app_data(JsonConfig::default().error_handler(|err, _| {
-                let json_error = match &err {
-                    Error::Validate(error) => ValidationErrorDTO::from(error),
-                    _ => ValidationErrorDTO {
-                        message: err.to_string(),
-                        fields: Vec::new(),
-                    },
-                };
+            .app_data(
+                JsonConfig::default()
+                    .limit(
+                        match env::var("API_MAX_PAYLOAD_SIZE")
+                            .ok()
+                            .and_then(|value| value.parse().ok())
+                        {
+                            Some(value) => value,
+                            None => 32768,
+                        },
+                    )
+                    .error_handler(|err, _| {
+                        let json_error = match &err {
+                            Error::Validate(error) => ValidationErrorDTO::from(error),
+                            _ => ValidationErrorDTO {
+                                message: err.to_string(),
+                                fields: Vec::new(),
+                            },
+                        };
 
-                InternalError::from_response(err, HttpResponse::Conflict().json(json_error)).into()
-            }))
+                        InternalError::from_response(err, HttpResponse::Conflict().json(json_error))
+                            .into()
+                    }),
+            )
             .service(routes::run_post::route)
     })
     .bind("0.0.0.0:8080")?
