@@ -26,13 +26,13 @@ docker run -it -d --privileged -p 8080:8080 quantumsheep/godbox:2
 |-------------------------|-----------|---------|-----------------------------|
 | API_MAX_PAYLOAD_SIZE    | `number`  | 32768   | API maximum payload size    |
 | ALLOW_PROFILING         | `boolean` | true    | Enable or disable profiling |
-| MAX_RUN_TIME_LIMIT      | `number`  | -1      | Maximum run time limit      |
-| MAX_EXTRA_TIME_LIMIT    | `number`  | -1      | Maximum extra time limit    |
-| MAX_WALL_TIME_LIMIT     | `number`  | -1      | Maximum wall time limit     |
-| MAX_STACK_SIZE_LIMIT    | `number`  | -1      | Maximum stack size limit    |
-| MAX_PROCESS_COUNT_LIMIT | `number`  | -1      | Maximum process count limit |
-| MAX_MEMORY_LIMIT        | `number`  | -1      | Maximum memory limit        |
-| MAX_STORAGE_LIMIT       | `number`  | -1      | Maximum storage limit       |
+| MAX_RUN_TIME_LIMIT      | `number`  | 5       | Maximum run time limit      |
+| MAX_EXTRA_TIME_LIMIT    | `number`  | 0       | Maximum extra time limit    |
+| MAX_WALL_TIME_LIMIT     | `number`  | 10      | Maximum wall time limit     |
+| MAX_STACK_SIZE_LIMIT    | `number`  | 128000  | Maximum stack size limit    |
+| MAX_PROCESS_COUNT_LIMIT | `number`  | 120     | Maximum process count limit |
+| MAX_MEMORY_LIMIT        | `number`  | 512000  | Maximum memory limit        |
+| MAX_STORAGE_LIMIT       | `number`  | 10240   | Maximum storage limit       |
 
 # Run commands
 Send a `POST` HTTP request to `http://localhost:8080/run` containing the wanted configuration in JSON. See below for properties.
