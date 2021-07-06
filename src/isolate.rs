@@ -321,8 +321,6 @@ impl IsolatedBox {
 
         let metadata = IsolateMetadata::from(metadata_string);
 
-        println!("{:?}", metadata);
-
         Ok(IsolatedExecutedCommandResult {
             status: match metadata.exit_code {
                 Some(exit_code) => ExitStatus::from_raw(exit_code),
