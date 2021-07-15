@@ -42,9 +42,9 @@ async fn main() -> io::Result<()> {
                     .limit(
                         match env::var("API_MAX_PAYLOAD_SIZE")
                             .ok()
-                            .and_then(|value| value.parse().ok())
+                            .and_then(|value| value.parse::<f64>().ok())
                         {
-                            Some(value) => value,
+                            Some(value) => value.round() as usize,
                             None => 32768,
                         },
                     )
