@@ -2,6 +2,7 @@ use crate::api_helpers::{ApiError, ApiResult};
 use crate::runner::phase_settings::{PhaseSandboxSettings, PhaseSettings};
 use crate::runner::runner::Runner;
 use crate::runner::runner::RunnerPhaseResult;
+use crate::utils;
 use actix_web::{post, web::Json};
 use merge::Merge;
 use serde::{Deserialize, Serialize};
@@ -27,27 +28,7 @@ pub struct RunResponseDTO {
 
 fn is_over_cap_limit_env(current_option: Option<u64>, name: &str) -> bool {
     match current_option {
-        Some(current) => {
-            let max = match env::var(name) {
-                Ok(value) => match value.as_str() {
-                    "-1" => u64::MAX,
-                    _ => match value.parse() {
-                        Ok(max) => max,
-                        Err(e) => {
-                            eprintln!(
-                                "Failed to parse environment variable '{}' as an `u64`: {}",
-                                name, e
-                            );
-
-                            u64::MAX
-                        }
-                    },
-                },
-                Err(_) => u64::MAX,
-            };
-
-            current > max
-        }
+        Some(current) => current > utils::parsed_env::get(name, u64::MAX),
         None => false,
     }
 }

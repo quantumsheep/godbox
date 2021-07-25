@@ -9,6 +9,8 @@ use std::process::Command;
 use std::process::ExitStatus;
 use std::{collections::HashMap, process::Stdio};
 
+use crate::utils;
+
 #[derive(Debug)]
 pub struct ExecutedCommandResult {
     pub status: ExitStatus,
@@ -137,25 +139,25 @@ pub struct IsolatedBoxOptions {
     #[builder(default = "false")]
     pub profiling: bool,
 
-    #[builder(default = "5")]
+    #[builder(default = "utils::parsed_env::get(\"MAX_RUN_TIME_LIMIT\", 5)")]
     pub run_time_limit: u64,
 
-    #[builder(default = "0")]
+    #[builder(default = "utils::parsed_env::get(\"MAX_EXTRA_TIME_LIMIT\", 0)")]
     pub extra_time_limit: u64,
 
-    #[builder(default = "10")]
+    #[builder(default = "utils::parsed_env::get(\"MAX_WALL_TIME_LIMIT\", 10)")]
     pub wall_time_limit: u64,
 
-    #[builder(default = "128000")]
+    #[builder(default = "utils::parsed_env::get(\"MAX_STACK_SIZE_LIMIT\", 128000)")]
     pub stack_size_limit: u64,
 
-    #[builder(default = "120")]
+    #[builder(default = "utils::parsed_env::get(\"MAX_PROCESS_COUNT_LIMIT\", 120)")]
     pub process_count_limit: u64,
 
-    #[builder(default = "512000")]
+    #[builder(default = "utils::parsed_env::get(\"MAX_MEMORY_LIMIT\", 512000)")]
     pub memory_limit: u64,
 
-    #[builder(default = "10240")]
+    #[builder(default = "utils::parsed_env::get(\"MAX_STORAGE_LIMIT\", 10240)")]
     pub storage_limit: u64,
 }
 

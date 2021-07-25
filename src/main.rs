@@ -9,6 +9,7 @@ extern crate derive_more;
 #[macro_use]
 extern crate derive_builder;
 
+mod utils;
 mod api_helpers;
 mod isolate;
 mod routes;
